@@ -1,0 +1,416 @@
+<?php
+require_once('db.php');
+require_once('variable.php');
+
+//change theme function
+function change_theme()
+{
+    if ($_SESSION['theme'] == "light") {
+        $_SESSION['theme'] = "dark";
+    } elseif ($_SESSION['theme'] == "dark") {
+        $_SESSION['theme'] = "light";
+    }
+}
+
+//generate uuid
+function guidv4()
+{
+    if (function_exists('com_create_guid') === true)
+        return trim(com_create_guid(), '{}');
+    $data = openssl_random_pseudo_bytes(16);
+    $data[6] = chr(ord($data[6]) & 0x0f | 0x40); // set version to 0100
+    $data[8] = chr(ord($data[8]) & 0x3f | 0x80); // set bits 6-7 to 10
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+}
+
+//generate random password
+function getrandom_password()
+{
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $randomString = '';
+
+    for ($i = 0; $i < 10; $i++) {
+        $index = rand(0, strlen($characters) - 1);
+        $randomString .= $characters[$index];
+    }
+    return $randomString;
+}
+
+//generate hash password
+function hash_password($password)
+{
+    $options = array("cost" => 6);
+    $hashPassword = password_hash($password, PASSWORD_BCRYPT, $options);
+    return $hashPassword;
+}
+//compare login password n hash passowrd
+function login_verify($password, $passhash)
+{
+    if (password_verify($password, $passhash)) {
+        $msg = array('status' => 200, 'msg' => "Login Successfull");
+    } else {
+        $msg = array('status' => 300, 'msg' => "Incorrect Password");
+    }
+    return $msg;
+}
+
+
+
+//--------------------------------------------------------------------------------------------------------
+//Role Section 
+//--------------------------------------------------------------------------------------------------------
+
+//add new role
+function internal_add_role($role_name, $role_description)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `roles` WHERE `role_name`=:role_name");
+    $query->bindparam(":role_name", $role_name, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $msg = array('status' => 300, 'msg' => "Role already exist.");
+    } else {
+        $role_uuid = guidv4();
+        $status = 1;
+        $query = $GLOBALS['db_mealmastur']->prepare("INSERT INTO `roles`(`role_uuid`, `role_name`, `role_description`, `status`) VALUES (:role_uuid,:role_name,:role_description,:status)");
+        $query->bindparam(":role_uuid", $role_uuid, PDO::PARAM_STR);
+        $query->bindparam(":role_name", $role_name, PDO::PARAM_STR);
+        $query->bindparam(":role_description", $role_description, PDO::PARAM_STR);
+        $query->bindparam(":status", $status, PDO::PARAM_INT);
+        $query->execute();
+        $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `roles` WHERE `role_name`=:role_name");
+        $query->bindparam(":role_name", $role_name, PDO::PARAM_STR);
+        $query->execute();
+        $data = $query->fetchAll(PDO::FETCH_ASSOC);
+        if ($data) {
+            $msg = array('status' => 200, 'msg' => "Role created successfully.");
+        } else {
+            $msg = array('status' => 300, 'msg' => "Something went wrong. Please try again later.");
+        }
+    }
+    return $msg;
+}
+
+//get all roles
+function internal_get_roles()
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `roles`");
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "Role data.", 'data' => $data);
+    return $msg;
+}
+
+//get roles detail by uuid
+function internal_get_roles_detail($role_uuid)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `roles` WHERE `role_uuid`=:role_uuid");
+    $query->bindparam(":role_uuid", $role_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "Role data.", 'data' => $data);
+    return $msg;
+}
+//--------------------------------------------------------------------------------------------------------
+//User Section
+//--------------------------------------------------------------------------------------------------------
+
+//Get All Users
+function internal_get_users()
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users`");
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "All user data.", 'data' => $data);
+    return $msg;
+}
+
+//get outlet users
+function internal_get_outlet_users($outlet_uuid)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `outlet_uuid`=:outlet_uuid");
+    $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "All user data.", 'data' => $data);
+    return $msg;
+}
+
+//create user
+function internal_create_user($first_name, $last_name, $email, $phone_number, $user_role, $password, $outlet_uuid, $created_by)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `email`=:email");
+    $query->bindparam(":email", $email, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $msg = array('status' => 300, 'msg' => "User already exist.");
+    } else {
+        $user_id = guidv4();
+        $status = 1;
+        $password_hash = hash_password($password);
+        $created_on = time();
+        $query = $GLOBALS['db_mealmastur']->prepare("INSERT INTO `users`(`user_uuid`, `first_name`, `last_name`, `email`, `phone_number`, `role_uuid`, `password`, `outlet_uuid`, `login_enabled`, `created_by`, `created_on`) VALUES (:user_id,:user_fname,:user_lname,:user_email,:user_phone,:user_role,:user_password,:outlet_uuid,:status,:created_by,:created_on)");
+        $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+        $query->bindparam(":user_fname", $first_name, PDO::PARAM_STR);
+        $query->bindparam(":user_lname", $last_name, PDO::PARAM_STR);
+        $query->bindparam(":user_email", $email, PDO::PARAM_STR);
+        $query->bindparam(":user_password", $password_hash, PDO::PARAM_STR);
+        $query->bindparam(":user_role", $user_role, PDO::PARAM_STR);
+        $query->bindparam(":user_phone", $phone_number, PDO::PARAM_STR);
+        $query->bindparam(":status", $status, PDO::PARAM_INT);
+        $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+        $query->bindparam(":created_by", $created_by, PDO::PARAM_STR);
+        $query->bindparam(":created_on", $created_on, PDO::PARAM_STR);
+        $query->execute();
+        $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `email`=:user_email ");
+        $query->bindparam(":user_email", $email, PDO::PARAM_STR);
+        $query->execute();
+        $data = $query->fetchAll(PDO::FETCH_ASSOC);
+        if ($data) {
+            $msg = array('status' => 200, 'msg' => "User Created Successfully.");
+        } else {
+            $msg = array('status' => 300, 'msg' => "Something Went Wrong. User not created");
+        }
+    }
+
+    return $msg;
+}
+
+//view user by user-uuid
+function internal_view_user($user_uuid)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `user_uuid`=:user_uuid");
+    $query->bindparam(":user_uuid", $user_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $msg = array('status' => 200, 'msg' => "user data.", 'data' => $data);
+    } else {
+        $msg = array('status' => 300, 'msg' => "user not found.");
+    }
+    return $msg;
+}
+
+//update user
+function internal_update_user($user_id, $first_name, $last_name, $phone_number, $user_role,$outlet_uuids)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `user_uuid`=:user_id");
+    $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $query = $GLOBALS['db_mealmastur']->prepare("UPDATE `users` SET  `first_name`=:user_fname,`last_name`=:user_lname,`phone_number`=:user_phone,`role_uuid`=:user_role,`outlet_uuid`=:outlet_uuid WHERE `user_uuid`=:user_id");
+        $query->bindparam(":user_fname", $first_name, PDO::PARAM_STR);
+        $query->bindparam(":user_lname", $last_name, PDO::PARAM_STR);
+        $query->bindparam(":user_phone", $phone_number, PDO::PARAM_STR);
+        $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+        $query->bindparam(":user_role", $user_role, PDO::PARAM_STR);
+        $query->bindparam(":outlet_uuid", $outlet_uuids, PDO::PARAM_STR);
+        $query->execute();
+        $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `user_uuid`=:user_id ");
+        $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+        $query->execute();
+        $data = $query->fetchAll(PDO::FETCH_ASSOC);
+        if ($data) {
+            $msg = array('status' => 200, 'msg' => "User updated successfully.");
+        } else {
+            $msg = array('status' => 300, 'msg' => "Something went wrong. Please try again later.");
+        }
+    } else {
+        $msg = array('status' => 300, 'msg' => "User not found.");
+    }
+    return $msg;
+}
+
+//Enable Disable User 
+function internal_users_enable_disbale($user_id)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `user_uuid`=:user_id");
+    $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        if ($data[0]['login_enabled'] == 1) {
+            $status = 0;
+        } else if ($data[0]['login_enabled'] == 0) {
+            $status = 1;
+        }
+        $query = $GLOBALS['db_mealmastur']->prepare("UPDATE `users` SET `login_enabled`=:status WHERE `user_uuid`=:user_id");
+        $query->bindparam(":user_id", $user_id, PDO::PARAM_STR);
+        $query->bindparam(":status", $status, PDO::PARAM_INT);
+        $query->execute();
+        $msg = array('status' => 200, 'msg' => "Login Status Changed.");
+    } else {
+        $msg = array('status' => 300, 'msg' => "Something Went Wrong. Please try Again");
+    }
+
+    return $msg;
+}
+
+//--------------------------------------------------------------------------------------------------------
+//Login Section 
+//--------------------------------------------------------------------------------------------------------
+
+//user login request api 
+function internal_user_login($email, $password)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `users` WHERE `email`=:email");
+    $query->bindparam(":email", $email, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        foreach ($data as $info) {
+            if ($info['status'] == 1) {
+                $passhash = $info['password'];
+                $login_verify = login_verify($password, $passhash);
+                if ($login_verify['status'] == 200) {
+                    $msg = array('status' => 200, 'msg' => "Login Success.", 'user_id' => $info['user_uuid']);
+                } else {
+                    $msg = array('status' => 300, 'msg' => "Login Failed.");
+                }
+            } else {
+                $msg = array('status' => 300, 'msg' => "Login Disabled.");
+            }
+        }
+    } else {
+        $msg = array('status' => 300, 'msg' => "Login Failed");
+    }
+    return $msg;
+}
+
+//--------------------------------------------------------------------------------------------------------
+//Outlet Section 
+//--------------------------------------------------------------------------------------------------------
+
+//add new outlet
+function internal_add_outlet($outlet_name, $outlet_email, $outlet_phonenumber, $outlet_address_line_1, $outlet_address_line_2, $outlet_city, $outlet_state, $outlet_country, $outlet_postal_code)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_name`=:outlet_name");
+    $query->bindparam(":outlet_name", $outlet_name, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $msg = array('status' => 300, 'msg' => "Outlet Already Exist.");
+    } else {
+        $outlet_uuid = guidv4();
+        $status = 1;
+        $query = $GLOBALS['db_mealmastur']->prepare("INSERT INTO `outlet`(`outlet_uuid`, `outlet_name`,  `outlet_email`, `outlet_phonenumber`, `outlet_address_line_1`, `outlet_address_line_2`, `outlet_city`, `outlet_state`, `outlet_country`, `outlet_postal_code`, `outlet_status`) VALUES (:outlet_uuid,:outlet_name,:outlet_email,:outlet_phonenumber,:outlet_address_line_1,:outlet_address_line_2,:outlet_city,:outlet_state,:outlet_country,:outlet_postal_code,:outlet_status)");
+        $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+        $query->bindparam(":outlet_name", $outlet_name, PDO::PARAM_STR);
+        $query->bindparam(":outlet_email", $outlet_email, PDO::PARAM_STR);
+        $query->bindparam(":outlet_phonenumber", $outlet_phonenumber, PDO::PARAM_STR);
+        $query->bindparam(":outlet_address_line_1", $outlet_address_line_1, PDO::PARAM_STR);
+        $query->bindparam(":outlet_address_line_2", $outlet_address_line_2, PDO::PARAM_STR);
+        $query->bindparam(":outlet_city", $outlet_city, PDO::PARAM_STR);
+        $query->bindparam(":outlet_state", $outlet_state, PDO::PARAM_STR);
+        $query->bindparam(":outlet_country", $outlet_country, PDO::PARAM_STR);
+        $query->bindparam(":outlet_postal_code", $outlet_postal_code, PDO::PARAM_STR);
+        $query->bindparam(":outlet_status", $status, PDO::PARAM_INT);
+        $query->execute();
+        $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_name`=:outlet_name");
+        $query->bindparam(":outlet_name", $outlet_name, PDO::PARAM_STR);
+        $query->execute();
+        $data = $query->fetchAll(PDO::FETCH_ASSOC);
+        if ($data) {
+            $msg = array('status' => 200, 'msg' => "Outlet created successfully.");
+        } else {
+            $msg = array('status' => 300, 'msg' => "Something went wrong. Please try again later.");
+        }
+    }
+    return $msg;
+}
+
+//get all outlet
+function internal_get_outlets()
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet`");
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "All outlet data.", 'data' => $data);
+    return $msg;
+}
+
+//get active outlets
+function internal_get_active_outlets()
+{
+    $status = 1;
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_status`=:status");
+    $query->bindparam(":status", $status, PDO::PARAM_INT);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "All outlet data.", 'data' => $data);
+    return $msg;
+}
+
+//get outlet by outlet uuid
+function internal_get_outlet_detail($outlet_uuid)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_uuid`=:outlet_uuid");
+    $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    $msg = array('status' => 200, 'msg' => "outlet data.", 'data' => $data);
+    return $msg;
+}
+
+//Enable Disable Outlet 
+function internal_outlet_enable_disbale($outlet_uuid)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_uuid`=:outlet_uuid");
+    $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        if ($data[0]['outlet_status'] == 1) {
+            $status = 0;
+        } else if ($data[0]['outlet_status'] == 0) {
+            $status = 1;
+        }
+        $query = $GLOBALS['db_mealmastur']->prepare("UPDATE `outlet` SET `outlet_status`=:status WHERE `outlet_uuid`=:outlet_uuid");
+        $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+        $query->bindparam(":status", $status, PDO::PARAM_INT);
+        $query->execute();
+        $msg = array('status' => 200, 'msg' => "Outlet Status Changed.");
+    } else {
+        $msg = array('status' => 300, 'msg' => "Something Went Wrong. Please try Again");
+    }
+
+    return $msg;
+}
+
+function internal_update_outlet_detail($outlet_uuid, $outlet_name, $outlet_email, $outlet_phonenumber, $outlet_address_line_1, $outlet_address_line_2, $outlet_city, $outlet_state, $outlet_country, $outlet_postal_code)
+{
+    $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_uuid`=:outlet_uuid");
+    $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+    $query->execute();
+    $data = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($data) {
+        $query = $GLOBALS['db_mealmastur']->prepare("UPDATE `outlet` SET `outlet_name`=:outlet_name,`outlet_email`=:outlet_email,`outlet_phonenumber`=:outlet_phonenumber,`outlet_address_line_1`=:outlet_address_line_1,`outlet_address_line_2`=:outlet_address_line_2,`outlet_city`=:outlet_city,`outlet_state`=:outlet_state,`outlet_country`=:outlet_country,`outlet_postal_code`=:outlet_postal_code WHERE `outlet_uuid`=:outlet_uuid");
+        $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+        $query->bindparam(":outlet_name", $outlet_name, PDO::PARAM_STR);
+        $query->bindparam(":outlet_email", $outlet_email, PDO::PARAM_STR);
+        $query->bindparam(":outlet_phonenumber", $outlet_phonenumber, PDO::PARAM_STR);
+        $query->bindparam(":outlet_address_line_1", $outlet_address_line_1, PDO::PARAM_STR);
+        $query->bindparam(":outlet_address_line_2", $outlet_address_line_2, PDO::PARAM_STR);
+        $query->bindparam(":outlet_city", $outlet_city, PDO::PARAM_STR);
+        $query->bindparam(":outlet_state", $outlet_state, PDO::PARAM_STR);
+        $query->bindparam(":outlet_country", $outlet_country, PDO::PARAM_STR);
+        $query->bindparam(":outlet_postal_code", $outlet_postal_code, PDO::PARAM_STR);
+        $query->execute();
+        $query = $GLOBALS['db_mealmastur']->prepare("SELECT * FROM `outlet` WHERE `outlet_uuid`=:outlet_uuid");
+        $query->bindparam(":outlet_uuid", $outlet_uuid, PDO::PARAM_STR);
+        $query->execute();
+        $data = $query->fetchAll(PDO::FETCH_ASSOC);
+        if ($data) {
+            $msg = array('status' => 200, 'msg' => "Outlet detail updated successfully.");
+        } else {
+            $msg = array('status' => 300, 'msg' => "Something went wrong.Please try again.");
+        }
+
+    } else {
+        $msg = array('status' => 300, 'msg' => "Outlet data not found.");
+    }
+    return $msg;
+}
+?>
